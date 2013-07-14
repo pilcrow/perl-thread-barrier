@@ -1,5 +1,11 @@
 Revision history for Perl extension Thread::Barrier.
 
+0.300_01  14 July 2013
+    - Correct handling of serial return code when barrier was released by
+      set_threshold().
+    - _try_release() assumes lock is held.
+    - local()ize Carp::CarpLevel modification.
+
 0.300   25 March 2007
     - Incorporated fix suggested by Michael Pomraning for a race condition in
       the exiting code.
