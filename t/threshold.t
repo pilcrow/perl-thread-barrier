@@ -17,7 +17,7 @@ use Thread::Barrier;
 
 use Test::More tests => 11;
 
-require 't/thr_compat.pl'; # is_running()
+require 't/testlib.pl'; # ok_all_running
 
 sub waitbar {
   my $barrier = shift;
@@ -46,7 +46,7 @@ for my $invalid (-1, "invalid") {
 #
 {
   my $n = 6;
-  my (@barriers, @thr, $running);
+  my (@barriers, @thr);
   for (1 .. $n) {
     my $b = Thread::Barrier->new($n + 1);
     for (1 .. $n) {
@@ -57,8 +57,7 @@ for my $invalid (-1, "invalid") {
 
   snooze();
   is(+@thr, @barriers * $n, 'Right number of threads');
-  $running = grep { $_->is_running } @thr;
-  is($running, @barriers * $n, "All threads blocked on barrier");
+  ok_all_running(\@thr);
 
   for (@barriers) { $_->set_threshold($n); }
 
@@ -77,8 +76,7 @@ for my $invalid (-1, "invalid") {
   push @thr, threads->create(sub { $bar->wait });
 
   snooze();
-  my $running = grep { $_->is_running } @thr;
-  is($running, 2, "Two threads waiting");
+  ok_all_running(\@thr);
 
   push @thr, threads->create(sub { $bar->wait });
   snooze();
@@ -96,8 +94,7 @@ for my $invalid (-1, "invalid") {
   $b->set_threshold(2);
   snooze();
 
-  my $running = grep { $_->is_running } @thr;
-  is($running, 1, "Single waiting thread was not released");
+  ok_all_running(\@thr, 'Single waiting thread not released yet');
 
   push @thr, threads->create(\&waitbar, $b);
   my @serials = grep { $_ } map { $_->join } @thr;
