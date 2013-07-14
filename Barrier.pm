@@ -23,7 +23,7 @@ use warnings;
 use threads;
 use threads::shared;
 
-our $VERSION = '0.300';
+our $VERSION = '0.300_01';
 
 ###########################################################################
 # Public Methods
@@ -35,10 +35,10 @@ our $VERSION = '0.300';
 # Arguments:
 #
 # threshold (opt)
-#   Specifies the required number of threads that 
+#   Specifies the required number of threads that
 #   must block on the barrier before it is released.
 #   Default value is 0.
-# 
+#
 # Returns a Thread::Barrier object on success, dies on failure.
 #
 sub new {
@@ -86,22 +86,26 @@ sub init {
 #
 # none
 #
-# Returns true to one of threads released upon barrier reset, false to 
+# Returns true to one of threads released upon barrier reset, false to
 # all others.
 #
 sub wait {
     my $self = shift;
+    my ($gen, $i);
+
     lock $self;
 
-    $self->{count}++;
+    $gen = $self->{generation};
+    $i   = $self->{count}++;
 
-    return 1 if $self->_try_release; # barrier reset and released
+    if (! $self->_try_release) {
+        # block
+        cond_wait($self) while $self->{generation} == $gen;
+    }
 
-    # otherwise block
-    my $gen = $self->{generation};
-    cond_wait($self) while $self->{generation} == $gen;
-
-    return;
+    # In our implementation, the first one to arrive gets the serial
+    # indicator
+    return ($i == 0);
 }
 
 
@@ -128,7 +132,7 @@ sub set_threshold {
     }
     if ($err) {
         require Carp;
-        $Carp::CarpLevel = 1;
+        local $Carp::CarpLevel = 1;
         Carp::confess($err);
     }
 
@@ -166,18 +170,18 @@ sub count {
 ###########################################################################
 
 #
-# _tr_release - release the barrier if a sufficient number of threads
-#               have reached the barrier.
+# _try_release - release the barrier if a sufficient number of threads
+#                have reached the barrier.
+#                N.B.:  Assumes the barrier is locked
 #
 # Arguments:
 #
 #   none
-# 
+#
 # Returns true if barrier is released, false otherwise.
 #
 sub _try_release {
     my $self = shift;
-    lock $self;
 
     return undef if $self->{count} < $self->{threshold};
 
@@ -262,17 +266,17 @@ Returns the currently configured threshold.
 
 Returns the instantaneous count of threads blocking on the barrier.
 
-B<WARNING:  This is an accessor method that is intended for debugging 
-purposes only, the lock on the barrier object is released when the 
-method returns.>  
+B<WARNING:  This is an accessor method that is intended for debugging
+purposes only, the lock on the barrier object is released when the
+method returns.>
 
 =back
 
 
 =head1 EXAMPLES
 
-The return code from C<wait> may be used to serialize a single-threaded 
-action upon release, executing the action only after all threads have 
+The return code from C<wait> may be used to serialize a single-threaded
+action upon release, executing the action only after all threads have
 arrived at (and are released from) the barrier:
 
     sub worker {            # Thr routine: threads->create(\&worker, ...)
@@ -299,7 +303,7 @@ simply re-use the same barrier:
         get_ready();
 
         if ($br->wait) {
-            init_globals();     # Must run after all get_ready() 
+            init_globals();     # Must run after all get_ready()
                                 # calls complete
         }
 
