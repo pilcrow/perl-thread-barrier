@@ -17,7 +17,7 @@ use threads;
 use threads::shared;
 use Thread::Barrier;
 
-use Test::More tests => 12;
+use Test::More tests => 20;
 
 our $k = 8;
 my  $flag   : shared = 0;
@@ -122,6 +122,13 @@ is($c->count, 0, "counter reset");
 }
 
 {
+    my $br = Thread::Barrier->new(1);
+    for (1 .. $k) {
+        ok($br->wait, "wait on one-threshold barrier");
+    }
+}
+
+{
     my $br = Thread::Barrier->new($k);
 
     for (1 .. ($k * 4)) {
@@ -132,4 +139,3 @@ is($c->count, 0, "counter reset");
 
     ok(@rel == 4, "wait serial return value");
 }
-
