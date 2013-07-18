@@ -42,18 +42,36 @@ our $VERSION = '0.300_01';
 # Returns a Thread::Barrier object on success, dies on failure.
 #
 sub new {
-    my $class       = shift;
+    my ($class, $threshold, %opts) = @_;
 
-    my $self = &share({});
-    bless $self, $class;
+    # threads::shared 1.43 (perl 5.18.0) does not yet support shared
+    # CODE refs, which would be obvious/ideal for our 'action' support.
+    # So, our Thread::Barrier object isn't itself shared, but one of
+    # its members is.
+    #
+    # Object structure (ARRAY ref):
+    #
+    #   [   {barrier implementation},    <-- shared
+    #       \&optional_coderef        ]  <-- non-shared
+    #
 
-    %$self = (
-        threshold   => 0, # threads required to release barrier
-        count       => 0, # number of threads blocking on barrier
-        generation  => 0, # incremented when barrier is released
+    my $self = bless [], $class;
+
+    $self->[0] = &share({});
+    %{$self->[0]} = (
+        threshold           => 0,    # threads required to release barrier
+        count               => 0,    # number of threads blocking on barrier
+        generation          => 0,    # incremented when barrier is released
+       #broken              => 0,    # true if broken
+       #first_released_$gen => 1,    # if present, $gen was just released
     );
 
-    $self->set_threshold(shift) if @_; # may die
+    $self->set_threshold($threshold) if $threshold; # may die
+    if ($opts{action}) {
+      _confess("Invalid action parameter to $class->new")
+        unless ref($opts{action}) eq 'CODE';
+      $self->[1] = $opts{action};
+    }
 
     return $self;
 }
@@ -91,16 +109,28 @@ sub init {
 #
 sub wait {
     my $self = shift;
+    my ($bar, $act) = @$self;
     my ($gen, $i);
 
-    lock $self;
+    lock $bar;
 
-    $gen = $self->{generation};
-    $i   = $self->{count}++;
+    $gen = $bar->{generation};
+    $i   = $bar->{count}++;
 
     if (! $self->_try_release) {
         # block
-        cond_wait($self) while $self->{generation} == $gen;
+        cond_wait($bar) while $bar->{generation} == $gen;
+    }
+
+    # Are we the first awake from our generation?  Run action if any
+    if (delete $bar->{"first_released_${gen}"} and $act) {
+      my $ok = eval { $act->(); 1; };
+      if (! $ok) {
+        $bar->{broken} = 1;
+        die($@ || "Barrier action failed");
+      }
+    } elsif ($bar->{broken}) {
+      _croak("Barrier broken");
     }
 
     # In our implementation, the first one to arrive gets the serial
@@ -116,9 +146,9 @@ sub wait {
 # Arguments:
 #
 # threshold
-#   Specifies the required number of threads that 
+#   Specifies the required number of threads that
 #   must block on the barrier before it is released.
-# 
+#
 # Returns true if barrier is released, false otherwise.
 #
 sub set_threshold {
@@ -131,14 +161,13 @@ sub set_threshold {
         $err = "invalid argument supplied", last if /[^0-9]/;
     }
     if ($err) {
-        require Carp;
         local $Carp::CarpLevel = 1;
-        Carp::confess($err);
+        _confess($err);
     }
 
     # apply new threshold, possibly releasing barrier
-    lock $self;
-    $self->{threshold} = $threshold;
+    lock $self->[0];
+    $self->[0]->{threshold} = $threshold;
 
     # check for release condition
     $self->_try_release;
@@ -149,9 +178,9 @@ sub set_threshold {
 # threshold - accessor for debugging purposes
 #
 sub threshold {
-    my $self = shift;
-    lock $self;
-    return $self->{threshold};
+    my $bar = shift->[0];
+    lock $bar;
+    return $bar->{threshold};
 }
 
 
@@ -159,15 +188,25 @@ sub threshold {
 # count - accessor for debugging purposes
 #
 sub count {
-    my $self = shift;
-    lock $self;
-    return $self->{count};
+    my $bar = shift->[0];
+    lock $bar;
+    return $bar->{count};
 }
 
 
 ###########################################################################
 # Private Methods
 ###########################################################################
+
+sub _confess {
+  require Carp;
+  goto &Carp::confess;
+}
+
+sub _croak {
+  require Carp;
+  goto &Carp::croak;
+}
 
 #
 # _try_release - release the barrier if a sufficient number of threads
@@ -181,14 +220,16 @@ sub count {
 # Returns true if barrier is released, false otherwise.
 #
 sub _try_release {
-    my $self = shift;
+    my $bar = shift->[0];
 
-    return undef if $self->{count} < $self->{threshold};
+    return undef if $bar->{count} < $bar->{threshold};
 
     # reset barrier and release
-    $self->{generation}++;
-    $self->{count} = 0;
-    cond_broadcast($self);
+    my $gen = $bar->{generation}++;
+    $bar->{"first_released_${gen}"} = 1;
+    $bar->{count} = 0;
+
+    cond_broadcast($bar);
     return 1;
 }
 
@@ -204,14 +245,23 @@ Thread::Barrier - thread execution barrier
 
   use Thread::Barrier;
 
-  my $br = Thread::Barrier->new($thr_cnt);
-  
-  $br->wait; 
+  # Common case
+  #
+  my $br = Thread::Barrier->new($threshold);
+  ...
+  $br->wait();               # Wait for $threshold threads to arrive
 
-  if ($br->wait) }
-      # executed by only one released thread
-      ...
+  if ($br->wait()) {         # Same, but one thread will then log
+    log("Everyone arrived");
   }
+
+  # Barrier with action
+  #
+  my $coderef = sub { ... };
+  my $br = Thread::Barrier->new($threshold, action => $coderef);
+  ...
+  $br->wait();               # $coderef will have run before any threads
+                             # return from wait()
 
 =head1 ABSTRACT
 
@@ -221,36 +271,41 @@ Execution barrier for multiple threads.
 
 Thread barriers provide a mechanism for synchronization of multiple threads.
 All threads issuing a C<wait> on the barrier will block until the count
-of waiting threads meets some threshold value.  When the threshold is met, the 
-threads will be released and the barrier reset, ready to be used again.  This 
-mechanism proves quite useful in situations where processing progresses in 
-stages and completion of the current stage by all threads is the entry 
+of waiting threads meets some threshold value.  When the threshold is met, the
+threads will be released and the barrier reset, ready to be used again.  This
+mechanism proves quite useful in situations where processing progresses in
+stages and completion of the current stage by all threads is the entry
 criteria for the next stage.
 
 =head1 METHODS
 
-=over 8
+=over 4
 
-=item new
+=item new THRESHOLD
 
-=item new COUNT
+=item new THRESHOLD OPTION => VALUE
 
-C<new> creates a new barrier and initializes the threshold count to C<COUNT>.
-If C<COUNT> is not specified, the threshold is set to 0.
+C<new> creates a new barrier with a threshold of C<THRESHOLD>.
+
+Optional parameters may be specified in a hash-like fashion.  At present
+the only supported OPTION is 'action', which specifies a code reference to
+be run when the last thread has arrived but before any threads return from
+L</wait>.  Precisely which thread runs the code reference is unspecified.
 
 =item set_threshold COUNT
 
-C<set_threshold> specifies the threshold count for the barrier, must be 
-zero or a positive integer.  If the value of C<COUNT> is less than or equal 
-to the number of threads blocking on the barrier when C<init> is called, the 
-barrier is released and reset.
+C<set_threshold> specifies the threshold count for the barrier, which must
+be zero or a positive integer.  (Note that a threshold of zero or one is
+rather a degenerate case barrier.)  If the new value of C<COUNT> is less
+than or equal to the number of threads blocked on the barrier, the barrier
+is released.
 
-Returns true if the barrier is released during the adjustment, false
+Returns true if the barrier is released because of the adjustment, false
 otherwise.
 
 =item wait
 
-C<wait> causes the thread to block until the number of threads blocking on 
+C<wait> causes the thread to block until the number of threads blocking on
 the barrier meets the threshold.  When the blocked threads are released, the
 barrier is reset to its initial state and ready for re-use.
 
@@ -275,7 +330,7 @@ method returns.>
 
 =head1 EXAMPLES
 
-The return code from C<wait> may be used to serialize a single-threaded
+The return code from L</wait> may be used to serialize a single-threaded
 action upon release, executing the action only after all threads have
 arrived at (and are released from) the barrier:
 
@@ -328,9 +383,10 @@ for additional suggestions.
 =head1 AUTHOR
 
 Mark Rogaski, E<lt>mrogaski@cpan.orgE<gt>
+Mike Pomraning, E<lt>mjp@cpan.orgE<gt>
 
-If you find this module useful or have any questions, comments, or 
-suggestions please send me an email message.
+If you find this module useful or have any questions, comments, or
+suggestions please send an email message.
 
 
 =head1 COPYRIGHT AND LICENSE
