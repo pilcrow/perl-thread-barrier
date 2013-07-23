@@ -108,9 +108,12 @@ sub init {
 # all others.
 #
 sub wait {
-    my $self = shift;
-    my ($bar, $act) = @$self;
+    my ($self, $timeo) = @_;
+    my ($bar, $act) = @$self; # Unwrap our actual barrier and action (if any)
     my ($gen, $i);
+
+    $timeo = $self->_normalize_timeout($timeo)
+      if defined($timeo);
 
     lock $bar;
 
@@ -118,8 +121,17 @@ sub wait {
     $i   = $bar->{count}++;
 
     if (! $self->_try_release) {
-        # block
-        cond_wait($bar) while $bar->{generation} == $gen;
+        unless (defined $timeo) {
+          # block
+          while ($bar->{generation} == $gen and not $bar->{broken}) {
+            cond_wait($bar);
+          }
+        } else {
+          while ($bar->{generation} == $gen and not $bar->{broken}) {
+            last if !cond_timedwait($bar, $timeo);
+          }
+          $bar->{broken} = 1 if $bar->{generation} == $gen;
+        }
     }
 
     # Are we the first awake from our generation?  Run action if any
@@ -233,6 +245,12 @@ sub _try_release {
     return 1;
 }
 
+sub _normalize_timeout {
+  my ($self, $timeo) = @_;
+  $timeo =~ /^\d+(?:\.\d+)*$/
+    or _croak("Invalid timeout specification ($timeo)");
+  $timeo += time();
+}
 
 1;
 __END__
