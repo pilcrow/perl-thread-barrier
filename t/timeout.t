@@ -4,7 +4,7 @@ use threads;
 use threads::shared;
 use Thread::Barrier;
 
-use Test::More tests => 44;
+use Test::More tests => 53;
 
 require 't/testlib.pl';
 
@@ -72,7 +72,9 @@ for my $timeout (undef, 10) {
   is($i, 1, "\$i is one");
 }
 
+#
 # Timeout
+#
 {
   { lock($i); $i = 0; }
   my $n       = 5;
@@ -81,6 +83,21 @@ for my $timeout (undef, 10) {
 
   my @serial  = grep { $_ } map { $_->join } @threads;
   is(scalar @serial, 0, "no serial return upon timeout");
+}
+
+#
+# Long-running action does _not_ cause a timeout
+#
+{
+  { lock($i); $i = 0; }
+  my $n       = 5;
+  my $barrier = Thread::Barrier->new($n, action => sub { zzz(10); $i++; });
+  my @threads = nthreads($n - 1, \&thr_patient, $barrier, 5);
+
+  push @threads, threads->create(sub { $barrier->wait });
+
+  my @serial  = grep { $_ } map { $_->join } @threads;
+  is(scalar @serial, 1, "serial count correct");
 }
 
 #
