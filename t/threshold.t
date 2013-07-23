@@ -1,15 +1,3 @@
-###########################################################################
-#
-# threshold.t
-#
-# Copyright (C) 2013 Mike Pomraning mjp@cpan.org
-# All rights reserved.
-#
-# See the README file included with the
-# distribution for license information.
-#
-###########################################################################
-
 use strict;
 use warnings;
 use threads;
