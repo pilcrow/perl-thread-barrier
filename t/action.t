@@ -4,7 +4,7 @@ use threads;
 use threads::shared;
 use Thread::Barrier;
 
-use Test::More tests => 33;
+use Test::More tests => 28;
 
 require 't/testlib.pl';
 
@@ -12,16 +12,16 @@ my $i : shared = 0;
 
 sub thr_routine {
   my $barrier = shift;
-  my $me = threads->tid;
+  my $tid = threads->tid;
 
   {
     lock($i);
-    is($i, 0, "[thread $me]: \$i is zero prior to barrier wait");
+    is($i, 0, "[$tid]: \$i is zero before barrier wait");
   }
   my $serial = $barrier->wait;
   {
     lock($i);
-    is($i, 1, "[thread $me]: \$i is one after barrier wait");
+    is($i, 1, "[$tid]: \$i is one after barrier wait");
   }
 
   $serial;
@@ -31,47 +31,34 @@ sub thr_routine {
 # Test ordinary action
 #
 {
-  my $n_threads = 10;
-  my @thr;
+  my $n       = 10;
+  my $barrier = Thread::Barrier->new($n, action => sub { $i++; });
+  my @threads = nthreads($n - 1, \&thr_routine, $barrier);
 
-  my $b = Thread::Barrier->new($n_threads, action => sub { $i++; });
-
-  for (1 .. $n_threads - 1) {
-    push @thr, threads->create(\&thr_routine, $b);
-  }
   threads->yield;
-  ok_all_running(\@thr);
-  is($i, 0, "[main] \$i is zero prior to barrier release");
-  push @thr, threads->create(\&thr_routine, $b);
-  my @serial = grep { $_ } map { $_->join } @thr;
-  is(scalar @serial, 1, "[main] thread serial count correct");
-  is($i, 1, "[main] \$i is one");
+  ok_all_running(\@threads);
+  is($i, 0, "\$i is zero before barrier release");
+
+  push @threads, threads->create(\&thr_routine, $barrier);
+  my @serial = grep { $_ } map { $_->join } @threads;
+  is(scalar @serial, 1, "thread serial count correct");
+  is($i, 1, "\$i is one");
 }
 
 #
 # Test broken action
 #
 {
-  my %err : shared;
+  my $n       = 5;
+  my $barrier = Thread::Barrier->new($n, action => sub { die "Blargh" });
+  my @threads = nthreads($n, sub { eval {$barrier->wait}; "$@"; });
 
-  my $n_threads = 5;
-  my @thr;
+  my @ret     = map  { $_->join }   @threads;
+  my $blarghs = grep { /Blargh/s }  @ret;
+  my $brokens = grep { /broken/is } @ret;
 
-  my $b = Thread::Barrier->new($n_threads, action => sub { die "Blargh" });
-  for (1 .. $n_threads) {
-    push @thr, threads->create(sub { eval { $b->wait; };
-                                     ok($@, "Got expected exception: '$@'");
-                                     if ($@) {
-                                     lock %err;
-                                     $err{ $@ =~ /Blargh/s ? 'blargh' : 'other' }++;
-                                     }
-                                   });
-  }
-
-  $_->join for @thr;
-  lock %err;
-  is($err{blargh}, 1, 'Only one thread saw action exception');
-  is($err{other}, $n_threads - 1, 'All other threads saw generic error');
+  is($blarghs, 1,      "Got one custom exception");
+  is($brokens, $n - 1, "Got other generic broken exceptions");
 }
 
 #

@@ -6,6 +6,11 @@ use threads;
 use threads::shared;
 use Test::More qw();
 
+sub nthreads {
+  my $n = shift;
+  map { threads->create(@_) } 1 .. $n;
+}
+
 sub ok_all_running(\@;$) {
   my ($thr, $msg) = @_;
   my $expected = @$thr;
@@ -15,9 +20,7 @@ sub ok_all_running(\@;$) {
 
 package Ad::Hoc::Thread::Compat;
 
-
 our %Running : shared;
-
 
 if (! threads->can('is_running')) { # threads->VERSION < 1.34
   my $create  = \&threads::create;
