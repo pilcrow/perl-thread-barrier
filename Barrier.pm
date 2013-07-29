@@ -1,13 +1,4 @@
 ###########################################################################
-# $Id: Barrier.pm,v 1.9 2007/03/25 08:20:07 wendigo Exp $
-###########################################################################
-#
-# Barrier.pm
-#
-# RCS Revision: $Revision: 1.9 $
-# Date: $Date: 2007/03/25 08:20:07 $
-#
-# Copyright 2002-2003, 2005, 2007 Mark Rogaski, mrogaski@cpan.org
 #
 # See the README file included with the
 # distribution for license information.
@@ -34,18 +25,20 @@ our $VERSION = '0.300_01';
 #
 # Arguments:
 #
-# threshold (opt)
+# threshold
 #   Specifies the required number of threads that
 #   must block on the barrier before it is released.
-#   Default value is 0.
+# opt => val ...
+#   Optional arguments to new()
 #
 # Returns a Thread::Barrier object on success, dies on failure.
 #
 sub new {
     my ($class, $threshold, %opts) = @_;
+    $opts{RaiseError} = 1 unless exists $opts{RaiseError};
 
     # threads::shared 1.43 (perl 5.18.0) does not yet support shared
-    # CODE refs, which would be obvious/ideal for our 'action' support.
+    # CODE refs, which would be obvious/ideal for our 'Action' support.
     # So, our Thread::Barrier object isn't itself shared, but one of
     # its members is.
     #
@@ -67,10 +60,18 @@ sub new {
     );
 
     $self->set_threshold($threshold) if $threshold; # may die
-    if ($opts{action}) {
-      _confess("Invalid action parameter to $class->new")
-        unless ref($opts{action}) eq 'CODE';
-      $self->[1] = $opts{action};
+    while (my ($opt, $val) = each(%opts)) {
+      if ($opt eq 'Action' and defined($val)) {
+        _confess("Invalid Action parameter to $class->new")
+        unless ref($val) eq 'CODE';
+        $self->[1] = $val;
+        next;
+      }
+      if ($opt eq 'RaiseError') {
+        $self->[0]->{RaiseError} = !!$val;
+        next;
+      }
+      _confess("Unrecognized parameter '$opt' to $class->new");
     }
 
     return $self;
@@ -87,7 +88,7 @@ sub new {
 # threshold
 #   Specifies the required number of threads that 
 #   must block on the barrier before it is released.
-# 
+#
 # Returns the passed argument.
 #
 sub init {
@@ -109,7 +110,7 @@ sub init {
 #
 sub wait {
     my ($self, $timeo) = @_;
-    my ($bar, $act) = @$self; # Unwrap our actual barrier and action (if any)
+    my ($bar, $act) = @$self; # Unwrap our actual barrier and Action (if any)
     my ($gen, $i);
 
     $timeo = $self->_normalize_timeout($timeo)
@@ -134,7 +135,7 @@ sub wait {
         }
     }
 
-    # Are we the first awake from our generation?  Run action if any
+    # Are we the first awake from our generation?  Run Action if any
     if (delete $bar->{"first_released_${gen}"} and $act) {
       my $ok = eval { $act->(); 1; };
       if (! $ok) {
@@ -142,7 +143,8 @@ sub wait {
         die($@ || "Barrier action failed");
       }
     } elsif ($bar->{broken}) {
-      _croak("Barrier broken");
+      _croak("Barrier broken") if $bar->{RaiseError};
+      return undef;
     }
 
     # In our implementation, the first one to arrive gets the serial
@@ -173,6 +175,7 @@ sub set_threshold {
         $err = "invalid argument supplied", last if /[^0-9]/;
     }
     if ($err) {
+        no warnings 'once';
         local $Carp::CarpLevel = 1;
         _confess($err);
     }
@@ -263,23 +266,22 @@ Thread::Barrier - thread execution barrier
 
   use Thread::Barrier;
 
-  # Common case
-  #
-  my $br = Thread::Barrier->new($threshold);
+  my $br = Thread::Barrier->new($n);
   ...
-  $br->wait();               # Wait for $threshold threads to arrive
-
-  if ($br->wait()) {         # Same, but one thread will then log
-    log("Everyone arrived");
+  $br->wait();               # Wait for $n threads to arrive, then all
+                             # are released at the same time.
+  ...
+  if ($br->wait()) {         # As above, but one and only one thread
+    log("Everyone arrived"); # logs after release.
   }
 
-  # Barrier with action
-  #
-  my $coderef = sub { ... };
-  my $br = Thread::Barrier->new($threshold, action => $coderef);
+  my $br = Thread::Barrier->new($n, Action => \&mysub);
   ...
-  $br->wait();               # $coderef will have run before any threads
-                             # return from wait()
+  $br->wait();               # mysub() will be called once after $n
+                             # threads arrive but before any are
+                             # released.
+
+  $br->wait($n);             # Wait for $n threads, but not forever.
 
 =head1 ABSTRACT
 
@@ -287,13 +289,19 @@ Execution barrier for multiple threads.
 
 =head1 DESCRIPTION
 
-Thread barriers provide a mechanism for synchronization of multiple threads.
-All threads issuing a C<wait> on the barrier will block until the count
-of waiting threads meets some threshold value.  When the threshold is met, the
-threads will be released and the barrier reset, ready to be used again.  This
-mechanism proves quite useful in situations where processing progresses in
-stages and completion of the current stage by all threads is the entry
-criteria for the next stage.
+A barrier allows a set of threads to wait for each other to arrive at the same
+point of execution, proceeding only when all of them have arrived.  After
+releasing the threads, a Thread::Barrier object is reset and ready to be
+used again.
+
+Sometimes it is convenient to have one thread from the waiting set perform
+some action when all parties have arrived.  Thread::Barrier objects support
+this functionality in two ways, either I<just before> release (via an
+'Action' parameter to L</new>) or I<just after> release (via the serialized
+return value from L</wait>).
+
+Waiting threads may also pass a timeout value to L</wait> if they don't wish
+to block indefinitely.
 
 =head1 METHODS
 
@@ -303,12 +311,27 @@ criteria for the next stage.
 
 =item new THRESHOLD OPTION => VALUE
 
-C<new> creates a new barrier with a threshold of C<THRESHOLD>.
+Returns a new Thread::Barrier object with a release threshold of C<THRESHOLD>.
+C<THRESHOLD> must be an integer greater than or equal to 1.
 
 Optional parameters may be specified in a hash-like fashion.  At present
-the only supported OPTION is 'action', which specifies a code reference to
-be run when the last thread has arrived but before any threads return from
-L</wait>.  Precisely which thread runs the code reference is unspecified.
+the supported options are:
+
+=over 8
+
+=item Action => CODEref
+
+A code reference to be run by one thread just before barrier release.
+Precisely which thread runs the action is unspecified.  The default is
+C<undef>, meaning no action will be taken.
+
+=item RaiseError => boolean
+
+A boolean parameter controlling whether broken barriers raise an exception
+or simply return C<undef> as described under L</"BROKENNESS">.  The
+default is true, meaning broken barriers raise exceptions.
+
+=back
 
 =item set_threshold COUNT
 
@@ -323,94 +346,55 @@ otherwise.
 
 =item wait
 
-C<wait> causes the thread to block until the number of threads blocking on
-the barrier meets the threshold.  When the blocked threads are released, the
+=item wait TIMEOUT
+
+C<wait> blocks the calling thread until the number of threads blocking on the
+barrier meets the threshold.  When the blocked threads are released, the
 barrier is reset to its initial state and ready for re-use.
 
+The calling thread may optionally block for up to TIMEOUT seconds.  If any
+blocked thread times out, the barrier is broken as described under
+L</"BROKENNESS">, below.
+
 This method returns a true value to one of the released threads, and false to
-any and all others.  Precisely which thread receives the true value is
-unspecified, however.
+all others.  Precisely which thread receives the true value is
+unspecified.
 
 =item threshold
 
-Returns the currently configured threshold.
+Returns the current threshold.
 
 =item count
 
 Returns the instantaneous count of threads blocking on the barrier.
 
-B<WARNING:  This is an accessor method that is intended for debugging
-purposes only, the lock on the barrier object is released when the
-method returns.>
-
 =back
 
+=head1 BROKENNESS
 
-=head1 EXAMPLES
+In this context, brokenness is a feature.  Thread::Barrier objects may break
+for one of two reasons:  either because the barrier L</Action> C<die()d>, or
+because a call to L</wait> timed out.  In either case, the program logic behind
+the barrier has been violated, and it is usually very difficult to
+re-synchronize the program once this has happened.
 
-The return code from L</wait> may be used to serialize a single-threaded
-action upon release, executing the action only after all threads have
-arrived at (and are released from) the barrier:
-
-    sub worker {            # Thr routine: threads->create(\&worker, ...)
-        my $br = shift;     # $br->isa('Thread::Barrier')
-
-        get_ready();
-
-        if ($br->wait) {
-            do_log("All ready");    # Called only once
-        }
-
-       do_work();
-    }
-
-Of course, the operating system may schedule the single-threaded action to
-occur at any time.  That is, in the example above, do_log() may run before,
-during or after other released threads' calls to do_work().  To further
-serialize this action to complete before peer threads do anything else,
-simply re-use the same barrier:
-
-    sub worker {
-        my $br = shift;
-
-        get_ready();
-
-        if ($br->wait) {
-            init_globals();     # Must run after all get_ready()
-                                # calls complete
-        }
-
-        $br->wait;              # Prevents do_work() from running
-                                # before init_globals() finishes.
-        do_work();
-    }
-
+When a Thread::Barrier object is broken, pending and subsequent calls to
+L</wait> immediately raise an exception or return C<undef> depending on the
+value of L</RaiseError>.
 
 =head1 SEE ALSO
 
 L<perlthrtut>.
 
-
-=head1 NOTES
-
-Many thanks to Michael Pomraning for providing a workaround for a race
-condition in the C<wait()> method that also helped to clean up the code and
-for additional suggestions.
-
-
-=head1 AUTHOR
+=head1 AUTHORS
 
 Mark Rogaski, E<lt>mrogaski@cpan.orgE<gt>
 Mike Pomraning, E<lt>mjp@cpan.orgE<gt>
 
-If you find this module useful or have any questions, comments, or
-suggestions please send an email message.
-
-
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2002-2003, 2005, 2007 by Mark Rogaski, mrogaski@cpan.org;
-all rights reserved.
+Copyright 2002-2003, 2005, 2007 by Mark Rogaski, mrogaski@cpan.org; 2013 by
+Mark Rogaski and Mike Pomraning, mjp@cpan.org;  all rights reserved.
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
