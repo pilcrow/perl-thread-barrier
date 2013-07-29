@@ -4,6 +4,11 @@ Makefile.PL
 MANIFEST
 META.yml
 README
+t/action.t
 t/init.t
 t/load.t
+t/raiseerr.t
+t/testlib.pl
+t/threshold.t
+t/timeout.t
 t/wait.t
