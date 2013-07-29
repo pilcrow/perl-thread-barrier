@@ -57,7 +57,7 @@ for my $timeout (undef, 10) {
   { lock $i; $i = 0; }
 
   my $n       = 5;
-  my $barrier = Thread::Barrier->new($n, action => sub { $i++; });
+  my $barrier = Thread::Barrier->new($n, Action => sub { $i++; });
   my @threads = nthreads($n - 1, \&thr_patient, $barrier, $timeout);
 
   select(undef, undef, undef, 1);
@@ -78,7 +78,7 @@ for my $timeout (undef, 10) {
 {
   { lock($i); $i = 0; }
   my $n       = 5;
-  my $barrier = Thread::Barrier->new($n, action => sub { $i++ });
+  my $barrier = Thread::Barrier->new($n, Action => sub { $i++ });
   my @threads = nthreads($n - 1, \&thr_timeout, $barrier, 3);
 
   my @serial  = grep { $_ } map { $_->join } @threads;
@@ -91,7 +91,7 @@ for my $timeout (undef, 10) {
 {
   { lock($i); $i = 0; }
   my $n       = 5;
-  my $barrier = Thread::Barrier->new($n, action => sub { zzz(10); $i++; });
+  my $barrier = Thread::Barrier->new($n, Action => sub { zzz(10); $i++; });
   my @threads = nthreads($n - 1, \&thr_patient, $barrier, 5);
 
   push @threads, threads->create(sub { $barrier->wait });

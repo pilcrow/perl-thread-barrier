@@ -6,6 +6,10 @@ use threads;
 use threads::shared;
 use Test::More qw();
 
+sub zzz {
+  select(undef, undef, undef, $_[0]);
+}
+
 sub nthreads {
   my $n = shift;
   map { threads->create(@_) } 1 .. $n;
