@@ -32,7 +32,7 @@ sub thr_routine {
 #
 {
   my $n       = 10;
-  my $barrier = Thread::Barrier->new($n, action => sub { $i++; });
+  my $barrier = Thread::Barrier->new($n, Action => sub { $i++; });
   my @threads = nthreads($n - 1, \&thr_routine, $barrier);
 
   threads->yield;
@@ -50,7 +50,7 @@ sub thr_routine {
 #
 {
   my $n       = 5;
-  my $barrier = Thread::Barrier->new($n, action => sub { die "Blargh" });
+  my $barrier = Thread::Barrier->new($n, Action => sub { die "Blargh" });
   my @threads = nthreads($n, sub { eval {$barrier->wait}; "$@"; });
 
   my @ret     = map  { $_->join }   @threads;
@@ -65,8 +65,8 @@ sub thr_routine {
 # Test invalid action specification
 #
 {
-  eval { Thread::Barrier->new(2, action => "foo"); };
+  eval { Thread::Barrier->new(2, Action => "foo"); };
   ok($@, "Invalid action specification (string) raises error");
-  eval { Thread::Barrier->new(2, action => {}); };
+  eval { Thread::Barrier->new(2, Action => {}); };
   ok($@, "Invalid action specification (hashref) raises error");
 }
