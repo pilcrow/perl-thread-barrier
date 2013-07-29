@@ -6,8 +6,8 @@ Name               DSLIP  Description                             Info
 Thread::Barrier    bdpOp  Thread barriers for Perl                MROGASKI
 
 
-Thread barriers provide a mechanism for synchronization of multiple 
-threads.  All threads issuing a "wait" on the barrier will block until 
+Thread barriers provide a mechanism for synchronization of multiple
+threads.  All threads issuing a "wait" on the barrier will block until
 the count of waiting threads meets some threshold value.  This mechanism
 proves quite useful in situations where processing progresses in stages
 and completion of the current stage by all threads is the entry criteria
