@@ -15,6 +15,7 @@ use threads;
 use threads::shared;
 
 our $VERSION = '0.300_01';
+$VERSION = eval $VERSION;
 
 ###########################################################################
 # Public Methods
