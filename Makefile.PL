@@ -1,35 +1,23 @@
-###########################################################################
-# $Id: Makefile.PL,v 1.3 2005/11/01 20:19:52 wendigo Exp $
-###########################################################################
-#
-# Makefile.PM
-#
-# RCS Revision: $Revision: 1.3 $
-# Date: $Date: 2005/11/01 20:19:52 $
-#
-# Copyright 2002 Mark Rogaski, mrogaski@cpan.org
-#
-# See the README file included with the
-# distribution for license information.
-#
-###########################################################################
-use 5.008;
-use threads ();
+# Makefile.PL for Thread::Barrier
+
+require 5.008;
+
+use strict;
+use warnings;
+
 use ExtUtils::MakeMaker;
 
 WriteMakefile(
-    'NAME'		=> 'Thread::Barrier',
-    'VERSION_FROM'	=> 'Barrier.pm',
-    ($] >= 5.005 
-        ?  (
-            ABSTRACT_FROM => 'Barrier.pm', 
-            AUTHOR        => 'Mark Rogaski <mrogaski@cpan.org>'
-        ) 
-        : ()),
-    ($] < 5.008 
-        ? () 
-        : ( 
-            NO_META => 1
-        )),
+    NAME		      => 'Thread::Barrier',
+    VERSION_FROM 	=> 'Barrier.pm',
+    ABSTRACT_FROM => 'Barrier.pm',
+    AUTHOR        => 'Mike Pomraning <mjp@cpan.org>',
+    PREREQ_PM     => {
+                       'threads::shared' => 0,
+                       'Carp'            => 0,
+                       'Test::More'      => 0,
+                     },
+    ((ExtUtils::MakeMaker->VERSION() gt '6.30') ?
+       (LICENSE   => 'perl')           : ()),
 );
 

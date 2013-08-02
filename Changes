@@ -1,17 +1,17 @@
 Revision history for Perl extension Thread::Barrier.
 
-0.300_01  29 July 2013
-    - Added RaiseError parameter to constructor, optionally converting
-      broken exceptions to undef return codes. [MJP]
-    - Added support for wait($timeout) parameter, with timeout breaking
-      the barrier.  Test cases. [MJP]
-    - Added support for 'action' parameter to constructor, for a release
+0.300_01  01 Aug 2013 [MJP]
+    - Added support for 'Action' parameter to constructor, for a release
       action performed by one thread before any others were awakened.
-      Barriers may now break if the action dies.  Test cases. [MJP]
+      Barriers may now break if the action dies.  Test cases.
+    - Added RaiseError parameter to constructor, optionally converting
+      broken exceptions to undef return codes. Test cases.
+    - Added support for wait($timeout) parameter, with timeout breaking
+      the barrier.  Test cases.
     - Correct handling of serial return code when barrier was released by
-      set_threshold().  Test cases. [MJP]
-    - _try_release() assumes lock is held. [MJP]
-    - local()ize Carp::CarpLevel modification. [MJP]
+      set_threshold().  Test cases.
+    - _try_release() assumes lock is held.
+    - local()ize Carp::CarpLevel modification.
 
 0.300   25 March 2007
     - Incorporated fix suggested by Michael Pomraning for a race condition in
