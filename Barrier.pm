@@ -11,10 +11,9 @@ use 5.008;
 use strict;
 use warnings;
 
-use threads;
 use threads::shared;
 
-our $VERSION = '0.300_01';
+our $VERSION = '0.300_02';
 $VERSION = eval $VERSION;
 
 ###########################################################################
