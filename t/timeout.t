@@ -1,5 +1,12 @@
 use strict;
 use warnings;
+use Config;
+BEGIN {
+  unless ($Config{useithreads}) {
+    print "1..0 # SKIP perl not compiled with 'useithreads'\n";
+    exit 0;
+  }
+}
 use threads;
 use threads::shared;
 use Thread::Barrier;

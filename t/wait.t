@@ -1,18 +1,12 @@
-###########################################################################
-# $Id: wait.t,v 1.5 2007/03/25 08:21:11 wendigo Exp $
-###########################################################################
-#
-# wait.t
-#
-# Copyright (C) 2002-2003, 2005, 2007 Mark Rogaski, mrogaski@cpan.org; 
-# all rights reserved.
-#
-# See the README file included with the
-# distribution for license information.
-#
-###########################################################################
-
 use strict;
+use warnings;
+use Config;
+BEGIN {
+  unless ($Config{useithreads}) {
+    print "1..0 # SKIP perl not compiled with 'useithreads'\n";
+    exit 0;
+  }
+}
 use threads;
 use threads::shared;
 use Thread::Barrier;
