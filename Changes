@@ -1,5 +1,9 @@
 Revision history for Perl extension Thread::Barrier.
 
+0.300_01  05 Aug 2013 [MJP]
+    - Remove `use threads' from Barrier.pm.
+    - Update t/* to SKIP without useithreads.
+
 0.300_01  01 Aug 2013 [MJP]
     - Added support for 'Action' parameter to constructor, for a release
       action performed by one thread before any others were awakened.
