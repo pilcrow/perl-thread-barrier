@@ -1,6 +1,6 @@
 Revision history for Perl extension Thread::Barrier.
 
-0.300_01  05 Aug 2013 [MJP]
+0.300_02  05 Aug 2013 [MJP]
     - Remove `use threads' from Barrier.pm.
     - Update t/* to SKIP without useithreads.
 
